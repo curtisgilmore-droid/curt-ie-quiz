@@ -33,23 +33,36 @@ It is an unofficial companion to [JOE.ie](https://www.joe.ie/quiz). Questions be
    select id from auth.users where email = 'you@example.com';
    ```
 
-5. **GitHub settings.**
-   - Settings, Pages, Build and deployment, Source: **GitHub Actions**.
-   - Settings, Secrets and variables, Actions, Variables: add `SUPABASE_URL` and `SUPABASE_ANON_KEY` (the anon or publishable key from Settings, API). Never add the service role key.
-6. Re-run the **Deploy to GitHub Pages** workflow. The site is at `https://<your-user>.github.io/curt-ie-quiz/`.
+5. **Turn on GitHub Pages (Actions source).**
+   1. Open your repo on github.com and click **Settings** in the top bar, under the repo name (not your account settings).
+   2. In the left sidebar, under **Code and automation**, click **Pages**.
+   3. Under **Build and deployment**, open the **Source** dropdown and choose **GitHub Actions**. The page saves automatically, and there is no Save button.
+   4. Do not pick a branch. The "Deploy from a branch" option is not used here.
+
+   The free plan only publishes Pages from a **public** repo. If the Pages page says it needs a public repo, check **Settings**, then **General**, then **Danger Zone**, then **Change visibility**.
+
+6. **Add the Supabase settings as Actions variables.**
+   1. In the repo, go to **Settings**, then **Secrets and variables**, then **Actions**.
+   2. Click the **Variables** tab (not **Secrets**), then **New repository variable**.
+   3. Add `SUPABASE_URL` with your project URL (Settings, then API, "Project URL").
+   4. Add `SUPABASE_ANON_KEY` with the anon or publishable key from the same API page.
+   5. Never add the `service_role` key anywhere.
+
+7. **Run the deploy.** Pushing to `main` starts the **Deploy to GitHub Pages** workflow automatically. To check it, open the **Actions** tab and wait for a green tick. If the run was started before steps 5 and 6, click it, then **Re-run all jobs**.
+
+   When it finishes, the site is at `https://<your-user>.github.io/curt-ie-quiz/`. The link also appears on the Pages settings page and on the workflow run page.
 
 ## Weekly workflow
 
-1. Extract the quiz from JOE.ie (it reads the quiz embed, including the answer key and images):
+1. Open `/admin` and sign in.
+2. Paste the JOE.ie quiz link, for example `https://www.joe.ie/quiz/the-joe-friday-pub-quiz-week-529-889400`, and click **Load quiz**. The app reads the questions, options, correct answers, rounds and images, then shows a preview.
+3. Click **Publish as current quiz**, then send the Pages link to the Teams chat.
 
-   ```bash
-   npm run extract -- "https://www.joe.ie/quiz/<this-week-url>" sample/week.json
-   ```
+The same extraction is available from the command line if you want a JSON file. `sample/` is git-ignored so it stays out of the public repo:
 
-   The `sample/` folder is git-ignored so the questions stay out of the public repo.
-
-2. Open `/admin`, sign in, paste the contents of `sample/week.json`, check the preview, and publish.
-3. Send the Pages link to the Teams chat.
+```bash
+npm run extract -- "https://www.joe.ie/quiz/<this-week-url>" sample/week.json
+```
 
 Quiz JSON shape (`round` and `imageUrl` are optional):
 

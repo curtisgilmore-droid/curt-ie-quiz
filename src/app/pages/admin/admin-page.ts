@@ -1,36 +1,12 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  OnInit,
-  computed,
-  inject,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 
 import { AuthService } from '../../core/auth.service';
+import { JoeExtractService } from '../../core/joe-extract.service';
 import { QuizDraft } from '../../core/models';
 import { QuizApiService } from '../../core/quiz-api.service';
-import { QuizValidationError, parseQuizJson } from '../../core/quiz-parser';
+import { QuizValidationError, validateQuizDraft } from '../../core/quiz-parser';
 
 type AdminState = 'loading' | 'signed_out' | 'not_admin' | 'admin';
-
-interface ParseResult {
-  draft: QuizDraft | null;
-  error: string;
-}
-
-export const SAMPLE_QUIZ_JSON = `{
-  "weekId": "529",
-  "title": "The JOE Friday Pub Quiz - Week 529",
-  "sourceUrl": "https://www.joe.ie/quiz/the-joe-friday-pub-quiz-week-529-889400",
-  "questions": [
-    {
-      "text": "Which city is the capital of Ireland?",
-      "options": ["Cork", "Dublin", "Galway"],
-      "correctIndex": 1
-    }
-  ]
-}`;
 
 @Component({
   selector: 'app-admin-page',
@@ -40,27 +16,15 @@ export const SAMPLE_QUIZ_JSON = `{
 export class AdminPage implements OnInit {
   private readonly auth = inject(AuthService);
   private readonly api = inject(QuizApiService);
+  private readonly extractor = inject(JoeExtractService);
 
-  protected readonly sampleJson = SAMPLE_QUIZ_JSON;
   protected readonly state = signal<AdminState>('loading');
   protected readonly email = this.auth.email;
   protected readonly message = signal('');
   protected readonly messageIsError = signal(false);
   protected readonly busy = signal(false);
-  protected readonly jsonText = signal('');
-
-  protected readonly parsed = computed<ParseResult>(() => {
-    const text = this.jsonText().trim();
-    if (text === '') {
-      return { draft: null, error: '' };
-    }
-    try {
-      return { draft: parseQuizJson(text), error: '' };
-    } catch (error) {
-      const message = error instanceof QuizValidationError ? error.message : 'Invalid quiz JSON.';
-      return { draft: null, error: message };
-    }
-  });
+  protected readonly quizUrl = signal('');
+  protected readonly draft = signal<QuizDraft | null>(null);
 
   async ngOnInit(): Promise<void> {
     try {
@@ -91,12 +55,28 @@ export class AdminPage implements OnInit {
     this.state.set('signed_out');
   }
 
-  protected updateJson(event: Event): void {
-    this.jsonText.set((event.target as HTMLTextAreaElement).value);
+  protected updateUrl(event: Event): void {
+    this.quizUrl.set((event.target as HTMLInputElement).value);
+    this.draft.set(null);
+  }
+
+  protected async loadQuiz(): Promise<void> {
+    this.busy.set(true);
+    this.clearMessage();
+    this.draft.set(null);
+    try {
+      const loaded = await this.extractor.extract(this.quizUrl());
+      this.draft.set(validateQuizDraft(loaded));
+    } catch (error) {
+      const message = error instanceof QuizValidationError ? error.message : toMessage(error);
+      this.showError(message);
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   protected async publish(): Promise<void> {
-    const draft = this.parsed().draft;
+    const draft = this.draft();
     if (draft === null) {
       return;
     }
@@ -105,7 +85,8 @@ export class AdminPage implements OnInit {
     try {
       await this.api.publishQuiz(draft);
       this.showSuccess(`Published "${draft.title}" as the current quiz.`);
-      this.jsonText.set('');
+      this.draft.set(null);
+      this.quizUrl.set('');
     } catch (error) {
       this.showError(toMessage(error));
     } finally {

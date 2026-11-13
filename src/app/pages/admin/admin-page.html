@@ -36,25 +36,27 @@
     <div class="card">
       <h1>Publish this week's quiz</h1>
       <p class="muted">
-        Signed in as {{ email() }}. Paste the quiz JSON below. Publishing makes it the current quiz
-        and replaces the previous one on the quiz page. Past scores are kept.
+        Signed in as {{ email() }}. Paste this week's JOE.ie quiz link, load it, then publish.
+        Publishing makes it the current quiz. Past scores are kept.
       </p>
 
-      <label class="field">
-        <span>Quiz JSON</span>
-        <textarea
-          [value]="jsonText()"
-          (input)="updateJson($event)"
-          [placeholder]="sampleJson"
-          spellcheck="false"
-        ></textarea>
-      </label>
+      <form (submit)="$event.preventDefault(); loadQuiz()">
+        <label class="field">
+          <span>JOE.ie quiz link</span>
+          <input
+            type="url"
+            [value]="quizUrl()"
+            (input)="updateUrl($event)"
+            placeholder="https://www.joe.ie/quiz/the-joe-friday-pub-quiz-week-529-889400"
+            required
+          />
+        </label>
+        <button type="submit" [disabled]="busy() || quizUrl().trim() === ''">
+          {{ busy() && draft() === null ? 'Loading quiz...' : 'Load quiz' }}
+        </button>
+      </form>
 
-      @if (parsed().error !== '') {
-        <div class="notice error">{{ parsed().error }}</div>
-      }
-
-      @if (parsed().draft; as draft) {
+      @if (draft(); as draft) {
         <h2>Preview</h2>
         <p>
           <strong>{{ draft.title }}</strong> (week {{ draft.weekId }}),
@@ -70,7 +72,7 @@
       }
 
       <div class="actions">
-        <button type="button" [disabled]="busy() || parsed().draft === null" (click)="publish()">
+        <button type="button" [disabled]="busy() || draft() === null" (click)="publish()">
           Publish as current quiz
         </button>
         <button type="button" class="secondary" (click)="signOut()">Sign out</button>
