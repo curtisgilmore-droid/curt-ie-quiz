@@ -1,0 +1,18 @@
+<header class="site-header">
+  <a class="brand" routerLink="/">CURT<span class="brand-dot">.</span>ie Quiz</a>
+  <nav class="site-nav">
+    <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Quiz</a>
+    <a routerLink="/leaderboard" routerLinkActive="active">Leaderboard</a>
+    <a routerLink="/admin" routerLinkActive="active">Admin</a>
+  </nav>
+</header>
+
+<main class="page">
+  <router-outlet />
+</main>
+
+<footer class="site-footer">
+  CURT.ie Quiz is an unofficial companion to the
+  <a href="https://www.joe.ie/quiz" target="_blank" rel="noopener noreferrer">JOE.ie quizzes</a>.
+  Questions belong to JOE.ie.
+</footer>

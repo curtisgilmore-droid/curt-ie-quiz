@@ -1,0 +1,83 @@
+@switch (loadState()) {
+  @case ('loading') {
+    <p class="muted">Loading the leaderboard...</p>
+  }
+  @case ('error') {
+    <div class="notice error">
+      <strong>Could not load the leaderboard.</strong> {{ errorMessage() }}
+    </div>
+    <button type="button" (click)="load()">Try again</button>
+  }
+  @case ('ready') {
+    <div class="card">
+      <h2>Weekly leaderboard</h2>
+      @if (weeks().length === 0) {
+        <p class="muted">No quizzes have been published yet.</p>
+      } @else {
+        <label class="field">
+          <span>Week</span>
+          <select [value]="selectedQuizId()" (change)="selectWeek($event)">
+            @for (week of weeks(); track week.quizId) {
+              <option [value]="week.quizId" [selected]="week.quizId === selectedQuizId()">
+                {{ week.title }}{{ week.isCurrent ? ' (current)' : '' }}
+              </option>
+            }
+          </select>
+        </label>
+
+        @if (weeklyLoading()) {
+          <p class="muted">Loading...</p>
+        } @else if (weeklyRanked().length === 0) {
+          <p class="muted">No scores for this week yet.</p>
+        } @else {
+          <table class="board">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Player</th>
+                <th class="num">Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of weeklyRanked(); track row.entry.playerId) {
+                <tr>
+                  <td>{{ row.rank }}</td>
+                  <td>{{ row.entry.playerName }}</td>
+                  <td class="num">{{ row.entry.score }} / {{ row.entry.total }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      }
+    </div>
+
+    <div class="card">
+      <h2>All-time leaderboard</h2>
+      @if (allTimeRanked().length === 0) {
+        <p class="muted">No scores yet.</p>
+      } @else {
+        <table class="board">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Player</th>
+              <th class="num">Quizzes</th>
+              <th class="num">Points</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of allTimeRanked(); track row.entry.playerId) {
+              <tr>
+                <td>{{ row.rank }}</td>
+                <td>{{ row.entry.playerName }}</td>
+                <td class="num">{{ row.entry.quizzesPlayed }}</td>
+                <td class="num">{{ row.entry.totalScore }} / {{ row.entry.totalPossible }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </div>
+  }
+}

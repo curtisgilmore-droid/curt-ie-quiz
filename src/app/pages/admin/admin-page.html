@@ -1,0 +1,80 @@
+@if (message() !== '') {
+  <div class="notice" [class.error]="messageIsError()">{{ message() }}</div>
+}
+
+@switch (state()) {
+  @case ('loading') {
+    <p class="muted">Loading...</p>
+  }
+  @case ('signed_out') {
+    <div class="card">
+      <h1>Admin sign in</h1>
+      <form (submit)="$event.preventDefault(); signIn(emailInput.value, passwordInput.value)">
+        <label class="field">
+          <span>Email</span>
+          <input #emailInput type="email" autocomplete="username" required />
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input #passwordInput type="password" autocomplete="current-password" required />
+        </label>
+        <button type="submit" [disabled]="busy()">Sign in</button>
+      </form>
+    </div>
+  }
+  @case ('not_admin') {
+    <div class="card">
+      <h1>Not an admin</h1>
+      <p>
+        You are signed in as <strong>{{ email() }}</strong>, but this account is not in the
+        <code>admins</code> table.
+      </p>
+      <button type="button" class="secondary" (click)="signOut()">Sign out</button>
+    </div>
+  }
+  @case ('admin') {
+    <div class="card">
+      <h1>Publish this week's quiz</h1>
+      <p class="muted">
+        Signed in as {{ email() }}. Paste the quiz JSON below. Publishing makes it the current quiz
+        and replaces the previous one on the quiz page. Past scores are kept.
+      </p>
+
+      <label class="field">
+        <span>Quiz JSON</span>
+        <textarea
+          [value]="jsonText()"
+          (input)="updateJson($event)"
+          [placeholder]="sampleJson"
+          spellcheck="false"
+        ></textarea>
+      </label>
+
+      @if (parsed().error !== '') {
+        <div class="notice error">{{ parsed().error }}</div>
+      }
+
+      @if (parsed().draft; as draft) {
+        <h2>Preview</h2>
+        <p>
+          <strong>{{ draft.title }}</strong> (week {{ draft.weekId }}),
+          {{ draft.questions.length }} questions.
+          <a [href]="draft.sourceUrl" target="_blank" rel="noopener noreferrer">Source</a>
+        </p>
+        <pre
+          class="preview"
+        >@for (question of draft.questions; track $index) {{{ $index + 1 }}. {{ question.text }}
+@for (option of question.options; track $index) {   {{ $index === question.correctIndex ? '[x]' : '[ ]' }} {{ option }}
+}
+}</pre>
+      }
+
+      <div class="actions">
+        <button type="button" [disabled]="busy() || parsed().draft === null" (click)="publish()">
+          Publish as current quiz
+        </button>
+        <button type="button" class="secondary" (click)="signOut()">Sign out</button>
+      </div>
+    </div>
+  }
+}

@@ -1,0 +1,149 @@
+@switch (loadState()) {
+  @case ('loading') {
+    <p class="muted">Loading this week's quiz...</p>
+  }
+  @case ('error') {
+    <div class="notice error"><strong>Could not load the quiz.</strong> {{ errorMessage() }}</div>
+    <button type="button" (click)="load()">Try again</button>
+  }
+  @case ('no_quiz') {
+    <div class="card">
+      <h1>No quiz yet</h1>
+      <p class="muted">Nothing has been published for this week. Check back soon.</p>
+    </div>
+  }
+  @case ('ready') {
+    @let q = quiz()!;
+    @switch (phase()) {
+      @case ('intro') {
+        <div class="card">
+          <h1>{{ q.title }}</h1>
+          <p class="muted">
+            {{ totalQuestions() }} multiple choice questions. One point for each correct answer.
+            Only your first attempt this week counts.
+          </p>
+          <p>
+            Want to see the original?
+            <a [href]="q.sourceUrl" target="_blank" rel="noopener noreferrer">Open it on JOE.ie</a>
+            (no peeking at the answers until you have played here).
+          </p>
+
+          <label class="field">
+            <span>Who are you?</span>
+            <select [value]="selectedPlayerId()" (change)="selectPlayer($event)">
+              <option value="">Pick your name</option>
+              @for (player of players(); track player.id) {
+                <option [value]="player.id">{{ player.name }}</option>
+              }
+            </select>
+          </label>
+
+          @if (alreadyPlayed()) {
+            <div class="notice">
+              You have already submitted a score for this week. Your first score stands.
+            </div>
+          }
+
+          <div class="actions">
+            <button type="button" [disabled]="!canStart()" (click)="start()">Start quiz</button>
+            <a class="button secondary" routerLink="/leaderboard">View leaderboard</a>
+          </div>
+        </div>
+      }
+      @case ('playing') {
+        @let question = currentQuestion()!;
+        <div class="card">
+          <div class="progress">
+            <span>Question {{ questionIndex() + 1 }} of {{ totalQuestions() }}</span>
+            <span>Score: {{ score() }}</span>
+          </div>
+          @if (currentRound() !== '') {
+            <p class="round">{{ currentRound() }}</p>
+          }
+          <h2>{{ question.text }}</h2>
+          @if (question.imageUrl; as imageUrl) {
+            <img class="question-image" [src]="imageUrl" alt="" referrerpolicy="no-referrer" />
+          }
+          <div class="options">
+            @for (option of question.options; track $index) {
+              <button
+                type="button"
+                [class]="optionClass($index)"
+                [disabled]="isAnswered()"
+                (click)="choose($index)"
+              >
+                {{ option }}
+              </button>
+            }
+          </div>
+          @if (isAnswered()) {
+            <p>
+              @if (selectedAnswer() === question.correctIndex) {
+                <strong>Correct!</strong>
+              } @else {
+                <strong>Not quite.</strong> The answer was
+                <em>{{ question.options[question.correctIndex] }}</em>.
+              }
+            </p>
+            <button type="button" (click)="next()">
+              {{ isLastQuestion() ? 'Finish' : 'Next question' }}
+            </button>
+          }
+        </div>
+      }
+      @case ('finished') {
+        <div class="card">
+          <h1>{{ playerName() }}, you scored</h1>
+          <div class="big-score">{{ score() }} / {{ totalQuestions() }}</div>
+
+          @switch (submitState()) {
+            @case ('submitting') {
+              <p class="muted">Saving your score...</p>
+            }
+            @case ('submitted') {
+              <div class="notice">Your score has been saved.</div>
+            }
+            @case ('duplicate') {
+              <div class="notice">
+                You had already submitted a score for this week, so your first score stands.
+              </div>
+            }
+            @case ('failed') {
+              <div class="notice error">Your score was not saved. {{ submitError() }}</div>
+              <button type="button" (click)="submit()">Try saving again</button>
+            }
+          }
+        </div>
+
+        <div class="card">
+          <h2>This week's leaderboard</h2>
+          @if (ranked().length === 0) {
+            <p class="muted">No scores yet.</p>
+          } @else {
+            <table class="board">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Player</th>
+                  <th class="num">Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of ranked(); track row.entry.playerId) {
+                  <tr [class.highlight]="row.entry.playerId === selectedPlayerId()">
+                    <td>{{ row.rank }}</td>
+                    <td>{{ row.entry.playerName }}</td>
+                    <td class="num">{{ row.entry.score }} / {{ row.entry.total }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+          <div class="actions">
+            <a class="button secondary" routerLink="/leaderboard">Full leaderboard</a>
+          </div>
+        </div>
+      }
+    }
+  }
+}
