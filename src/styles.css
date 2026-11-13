@@ -289,6 +289,16 @@ table.board tr.highlight td {
   font-weight: 600;
 }
 
+details.quiz-details {
+  margin: 1rem 0;
+}
+
+details.quiz-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--green);
+}
+
 pre.preview {
   max-height: 300px;
   overflow: auto;

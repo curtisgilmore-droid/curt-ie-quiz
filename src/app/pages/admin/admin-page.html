@@ -57,18 +57,20 @@
       </form>
 
       @if (draft(); as draft) {
-        <h2>Preview</h2>
         <p>
           <strong>{{ draft.title }}</strong> (week {{ draft.weekId }}),
           {{ draft.questions.length }} questions.
           <a [href]="draft.sourceUrl" target="_blank" rel="noopener noreferrer">Source</a>
         </p>
-        <pre
-          class="preview"
-        >@for (question of draft.questions; track $index) {{{ $index + 1 }}. {{ question.text }}
+        <details class="quiz-details">
+          <summary>View questions</summary>
+          <pre
+            class="preview"
+          >@for (question of draft.questions; track $index) {{{ $index + 1 }}. {{ question.text }}
 @for (option of question.options; track $index) {   {{ $index === question.correctIndex ? '[x]' : '[ ]' }} {{ option }}
 }
 }</pre>
+        </details>
       }
 
       <div class="actions">

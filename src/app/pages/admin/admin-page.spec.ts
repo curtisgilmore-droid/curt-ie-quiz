@@ -101,6 +101,9 @@ describe('AdminPage', () => {
     buttonNamed(element, 'Load quiz').click();
     await settle(fixture);
 
+    const details = element.querySelector('details.quiz-details') as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    details.open = true;
     expect(element.querySelector('pre.preview')?.textContent).toContain('[x] c');
     buttonNamed(element, 'Publish').click();
     await settle(fixture);

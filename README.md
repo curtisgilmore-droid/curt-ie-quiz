@@ -55,7 +55,7 @@ It is an unofficial companion to [JOE.ie](https://www.joe.ie/quiz). Questions be
 ## Weekly workflow
 
 1. Open `/admin` and sign in.
-2. Paste the JOE.ie quiz link, for example `https://www.joe.ie/quiz/the-joe-friday-pub-quiz-week-529-889400`, and click **Load quiz**. The app reads the questions, options, correct answers, rounds and images, then shows a preview.
+2. Paste the JOE.ie quiz link, for example `https://www.joe.ie/quiz/the-joe-friday-pub-quiz-week-529-889400`, and click **Load quiz**. The app reads the questions, options, correct answers, rounds and images, and shows the title and question count. Open **View questions** if you want to check them.
 3. Click **Publish as current quiz**, then send the Pages link to the Teams chat.
 
 The same extraction is available from the command line if you want a JSON file. `sample/` is git-ignored so it stays out of the public repo:
