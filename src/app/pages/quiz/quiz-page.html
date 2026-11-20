@@ -28,26 +28,58 @@
             (no peeking at the answers until you have played here).
           </p>
 
-          <label class="field">
-            <span>Who are you?</span>
-            <select [value]="selectedPlayerId()" (change)="selectPlayer($event)">
-              <option value="">Pick your name</option>
-              @for (player of players(); track player.id) {
-                <option [value]="player.id">{{ player.name }}</option>
-              }
-            </select>
-          </label>
+          @if (authEmail() === null) {
+            <form (submit)="$event.preventDefault(); requestLink()">
+              <label class="field">
+                <span>Your email</span>
+                <input
+                  type="email"
+                  [value]="signInEmail()"
+                  (input)="updateSignInEmail($event)"
+                  autocomplete="email"
+                  required
+                  placeholder="you@example.com"
+                />
+              </label>
+              <button
+                type="submit"
+                [disabled]="signInState() === 'sending' || signInEmail().trim() === ''"
+              >
+                {{ signInState() === 'sending' ? 'Sending...' : 'Email me a sign-in link' }}
+              </button>
+            </form>
+            @if (signInState() === 'sent') {
+              <div class="notice">
+                Check your inbox for a sign-in link. It opens this page and expires after about an
+                hour.
+              </div>
+            }
+            @if (signInState() === 'failed') {
+              <div class="notice error">{{ signInError() }}</div>
+            }
+          } @else if (player() === null) {
+            <div class="notice error">
+              You are signed in as <strong>{{ authEmail() }}</strong>, but that address is not on
+              the players list. Ask the admin to add you.
+            </div>
+            <button type="button" class="secondary" (click)="signOut()">Sign out</button>
+          } @else {
+            <p>
+              Signed in as <strong>{{ player()!.name }}</strong> ({{ player()!.email }}).
+              <button type="button" class="linkish" (click)="signOut()">Sign out</button>
+            </p>
 
-          @if (alreadyPlayed()) {
-            <div class="notice">
-              You have already submitted a score for this week. Your first score stands.
+            @if (alreadyPlayed()) {
+              <div class="notice">
+                You have already submitted a score for this week. Your first score stands.
+              </div>
+            }
+
+            <div class="actions">
+              <button type="button" [disabled]="!canStart()" (click)="start()">Start quiz</button>
+              <a class="button secondary" routerLink="/leaderboard">View leaderboard</a>
             </div>
           }
-
-          <div class="actions">
-            <button type="button" [disabled]="!canStart()" (click)="start()">Start quiz</button>
-            <a class="button secondary" routerLink="/leaderboard">View leaderboard</a>
-          </div>
         </div>
       }
       @case ('playing') {
@@ -130,7 +162,7 @@
               </thead>
               <tbody>
                 @for (row of ranked(); track row.entry.playerId) {
-                  <tr [class.highlight]="row.entry.playerId === selectedPlayerId()">
+                  <tr [class.highlight]="row.entry.playerId === player()?.id">
                     <td>{{ row.rank }}</td>
                     <td>{{ row.entry.playerName }}</td>
                     <td class="num">{{ row.entry.score }} / {{ row.entry.total }}</td>

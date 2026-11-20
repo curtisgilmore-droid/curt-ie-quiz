@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 
-import { fetchJoeQuiz } from '../src/app/core/joe-extract.ts';
+import { fetchJoeQuiz } from '../supabase/functions/_shared/joe-extract.ts';
 
 const [source, outputPath] = process.argv.slice(2);
 if (!source) {

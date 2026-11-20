@@ -1,7 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 
+import { environment } from '../../environments/environment';
 import {
   AllTimeScore,
+  CurrentPlayer,
   Player,
   Quiz,
   QuizDraft,
@@ -9,6 +11,7 @@ import {
   WeekOption,
   WeeklyScore,
 } from './models';
+import { AuthService } from './auth.service';
 import { SupabaseService } from './supabase.service';
 
 export type QuizApiErrorCode =
@@ -18,6 +21,7 @@ export type QuizApiErrorCode =
   | 'player_not_found'
   | 'invalid_score'
   | 'not_authorized'
+  | 'not_authenticated'
   | 'unknown';
 
 const KNOWN_ERROR_CODES: readonly QuizApiErrorCode[] = [
@@ -27,6 +31,7 @@ const KNOWN_ERROR_CODES: readonly QuizApiErrorCode[] = [
   'player_not_found',
   'invalid_score',
   'not_authorized',
+  'not_authenticated',
 ];
 
 export class QuizApiError extends Error {
@@ -67,9 +72,16 @@ interface AllTimeScoreRow {
   quizzes_played: number;
 }
 
+interface PlayerRow {
+  id: string;
+  name: string;
+  email: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class QuizApiService {
   private readonly supabase = inject(SupabaseService);
+  private readonly auth = inject(AuthService);
 
   async getCurrentQuiz(): Promise<Quiz | null> {
     const { data, error } = await this.supabase.client
@@ -83,15 +95,35 @@ export class QuizApiService {
     return data ? toQuiz(data as QuizRow) : null;
   }
 
+  async getCurrentPlayer(): Promise<CurrentPlayer | null> {
+    const { data, error } = await this.supabase.client.rpc('current_player');
+    if (error) {
+      throw toApiError(error.message);
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) {
+      return null;
+    }
+    return {
+      id: row.id as string,
+      name: row.name as string,
+      email: row.email as string,
+    };
+  }
+
   async getPlayers(): Promise<Player[]> {
     const { data, error } = await this.supabase.client
       .from('players')
-      .select('id, name')
+      .select('id, name, email')
       .order('name');
     if (error) {
       throw toApiError(error.message);
     }
-    return (data ?? []) as Player[];
+    return ((data ?? []) as PlayerRow[]).map((row) => ({
+      id: row.id,
+      name: row.name,
+      email: row.email,
+    }));
   }
 
   async getWeeks(): Promise<WeekOption[]> {
@@ -129,9 +161,8 @@ export class QuizApiService {
     return ((data ?? []) as AllTimeScoreRow[]).map(toAllTimeScore);
   }
 
-  async submitScore(playerId: string, quizId: string, score: number): Promise<void> {
+  async submitScore(quizId: string, score: number): Promise<void> {
     const { error } = await this.supabase.client.rpc('submit_score', {
-      p_player_id: playerId,
       p_quiz_id: quizId,
       p_score: score,
     });
@@ -159,6 +190,61 @@ export class QuizApiService {
     }
     return data === true;
   }
+
+  async addPlayer(name: string, email: string): Promise<void> {
+    await this.callFunction('manage-players', {
+      action: 'add',
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+    });
+  }
+
+  async removePlayer(playerId: string): Promise<void> {
+    await this.callFunction('manage-players', {
+      action: 'remove',
+      playerId,
+    });
+  }
+
+  async sendWeeklyInvite(): Promise<InviteResult> {
+    return this.callFunction('send-weekly-invite', { action: 'resend' }) as Promise<InviteResult>;
+  }
+
+  async fetchLatestQuiz(): Promise<InviteResult> {
+    return this.callFunction('send-weekly-invite', { action: 'fetch' }) as Promise<InviteResult>;
+  }
+
+  private async callFunction(name: string, body: Record<string, unknown>): Promise<unknown> {
+    const token = await this.auth.accessToken();
+    if (!token) {
+      throw new QuizApiError('You must be signed in.', 'not_authenticated');
+    }
+    if (!environment.supabaseUrl || !environment.supabaseAnonKey) {
+      throw new QuizApiError('Supabase is not configured.', 'unknown');
+    }
+    const response = await fetch(`${environment.supabaseUrl}/functions/v1/${name}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        apikey: environment.supabaseAnonKey,
+      },
+      body: JSON.stringify(body),
+    });
+    const payload = (await response.json().catch(() => ({}))) as InviteResult & { error?: string };
+    if (!response.ok) {
+      throw toApiError(payload.error ?? `Function ${name} failed (${response.status})`);
+    }
+    return payload;
+  }
+}
+
+interface InviteResult {
+  sent: number;
+  skipped: boolean;
+  published?: boolean;
+  title?: string;
+  reason?: string;
 }
 
 function toApiError(message: string): QuizApiError {

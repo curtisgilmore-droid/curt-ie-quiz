@@ -1,0 +1,2 @@
+[functions.send-weekly-invite]
+verify_jwt = false

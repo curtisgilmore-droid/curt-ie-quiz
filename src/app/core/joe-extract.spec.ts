@@ -1,4 +1,12 @@
-import { JoeExtractError, joeQuizUrl, quizFromHtml } from './joe-extract';
+import { vi } from 'vitest';
+
+import {
+  JoeExtractError,
+  joeQuizUrl,
+  latestFridayQuizUrl,
+  quizFromHtml,
+  syncLatestQuiz,
+} from './joe-extract';
 
 const PAGE = `
   <h1>The JOE Friday Pub Quiz: week 529 | JOE.ie</h1>
@@ -42,6 +50,63 @@ describe('quizFromHtml', () => {
         imageUrl: 'https://assets.joe.ie/uploads/2026/11/1.webp',
       },
     ]);
+  });
+
+  it('picks the highest Friday Pub Quiz week from the index', () => {
+    const index = `
+      <a href="/quiz/the-joe-friday-pub-quiz-week-529-889400">529</a>
+      <a href="https://www.joe.ie/quiz/the-joe-friday-pub-quiz-week-530-889920">530</a>
+      <a href="https://www.joe.ie/quiz/the-joe-film-club-quiz-week-122">film</a>
+    `;
+    expect(latestFridayQuizUrl(index)).toBe(
+      'https://www.joe.ie/quiz/the-joe-friday-pub-quiz-week-530-889920',
+    );
+  });
+
+  it('publishes a newly discovered week and skips the same week', async () => {
+    const pages: Record<string, string> = {
+      'https://www.joe.ie/quiz/':
+        '<a href="https://www.joe.ie/quiz/the-joe-friday-pub-quiz-week-530-889920">530</a>',
+      'https://www.joe.ie/quiz/the-joe-friday-pub-quiz-week-530-889920':
+        '<h1>The JOE Friday Pub Quiz: week 530</h1><iframe src="/wpvq-embed/9/"></iframe>',
+      'https://www.joe.ie/wpvq-embed/9/': EMBED,
+    };
+    const fetchPage = async (url: string) => {
+      const html = pages[url];
+      if (!html) {
+        throw new Error(`unexpected ${url}`);
+      }
+      return html;
+    };
+    const published: string[] = [];
+    const store = {
+      getCurrent: async (): Promise<{ weekId: string; title: string } | null> => null,
+      publish: async (quiz: { weekId: string }) => {
+        published.push(quiz.weekId);
+      },
+    };
+
+    const first = await syncLatestQuiz(store, fetchPage);
+    expect(first.status).toBe('published');
+    expect(published).toEqual(['530']);
+
+    store.getCurrent = async () => ({ weekId: '530', title: 'Week 530' });
+    const second = await syncLatestQuiz(store, fetchPage);
+    expect(second.status).toBe('unchanged');
+    expect(published).toEqual(['530']);
+  });
+
+  it('does not publish when the quiz index cannot be read', async () => {
+    const publish = vi.fn();
+    await expect(
+      syncLatestQuiz(
+        { getCurrent: async () => ({ weekId: '529', title: 'Week 529' }), publish },
+        async () => {
+          throw new JoeExtractError('Could not reach JOE.ie: down');
+        },
+      ),
+    ).rejects.toThrow(/Could not reach JOE.ie/);
+    expect(publish).not.toHaveBeenCalled();
   });
 
   it('fails when the embed has no answer key', () => {

@@ -3,18 +3,21 @@ import {
   Component,
   OnInit,
   computed,
+  effect,
   inject,
   signal,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
-import { Player, Quiz, QuizQuestion, WeeklyScore } from '../../core/models';
+import { AuthService } from '../../core/auth.service';
+import { CurrentPlayer, Quiz, QuizQuestion, WeeklyScore } from '../../core/models';
 import { QuizApiError, QuizApiService } from '../../core/quiz-api.service';
 import { rankWeekly } from '../../core/ranking';
 
 type LoadState = 'loading' | 'ready' | 'no_quiz' | 'error';
 type Phase = 'intro' | 'playing' | 'finished';
 type SubmitState = 'idle' | 'submitting' | 'submitted' | 'duplicate' | 'failed';
+type SignInState = 'idle' | 'sending' | 'sent' | 'failed';
 
 @Component({
   selector: 'app-quiz-page',
@@ -24,14 +27,33 @@ type SubmitState = 'idle' | 'submitting' | 'submitted' | 'duplicate' | 'failed';
 })
 export class QuizPage implements OnInit {
   private readonly api = inject(QuizApiService);
+  private readonly auth = inject(AuthService);
+
+  constructor() {
+    effect(() => {
+      const email = this.auth.email();
+      if (!this.auth.ready() || this.loadState() !== 'ready') {
+        return;
+      }
+      if (email === null) {
+        this.player.set(null);
+        return;
+      }
+      void this.refreshPlayer();
+    });
+  }
 
   protected readonly loadState = signal<LoadState>('loading');
   protected readonly errorMessage = signal('');
   protected readonly quiz = signal<Quiz | null>(null);
-  protected readonly players = signal<Player[]>([]);
+  protected readonly player = signal<CurrentPlayer | null>(null);
   protected readonly weeklyScores = signal<WeeklyScore[]>([]);
+  protected readonly authEmail = this.auth.email;
 
-  protected readonly selectedPlayerId = signal('');
+  protected readonly signInEmail = signal('');
+  protected readonly signInState = signal<SignInState>('idle');
+  protected readonly signInError = signal('');
+
   protected readonly phase = signal<Phase>('intro');
   protected readonly questionIndex = signal(0);
   protected readonly selectedAnswer = signal<number | null>(null);
@@ -52,15 +74,15 @@ export class QuizPage implements OnInit {
   protected readonly isLastQuestion = computed(
     () => this.questionIndex() === this.totalQuestions() - 1,
   );
-  protected readonly alreadyPlayed = computed(() =>
-    this.weeklyScores().some((entry) => entry.playerId === this.selectedPlayerId()),
-  );
-  protected readonly canStart = computed(
-    () => this.selectedPlayerId() !== '' && !this.alreadyPlayed(),
-  );
+  protected readonly alreadyPlayed = computed(() => {
+    const player = this.player();
+    return player !== null && this.weeklyScores().some((entry) => entry.playerId === player.id);
+  });
+  protected readonly canStart = computed(() => this.player() !== null && !this.alreadyPlayed());
   protected readonly ranked = computed(() => rankWeekly(this.weeklyScores()));
 
   async ngOnInit(): Promise<void> {
+    await this.auth.init();
     await this.load();
   }
 
@@ -69,16 +91,14 @@ export class QuizPage implements OnInit {
     try {
       const quiz = await this.api.getCurrentQuiz();
       if (quiz === null) {
+        this.quiz.set(null);
         this.loadState.set('no_quiz');
         return;
       }
-      const [players, weeklyScores] = await Promise.all([
-        this.api.getPlayers(),
-        this.api.getWeeklyScores(quiz.id),
-      ]);
+      const weeklyScores = await this.api.getWeeklyScores(quiz.id);
       this.quiz.set(quiz);
-      this.players.set(players);
       this.weeklyScores.set(weeklyScores);
+      await this.refreshPlayer();
       this.loadState.set('ready');
     } catch (error) {
       this.errorMessage.set(toMessage(error));
@@ -86,8 +106,32 @@ export class QuizPage implements OnInit {
     }
   }
 
-  protected selectPlayer(event: Event): void {
-    this.selectedPlayerId.set((event.target as HTMLSelectElement).value);
+  protected updateSignInEmail(event: Event): void {
+    this.signInEmail.set((event.target as HTMLInputElement).value);
+    this.signInState.set('idle');
+    this.signInError.set('');
+  }
+
+  protected async requestLink(): Promise<void> {
+    const email = this.signInEmail().trim();
+    if (email === '') {
+      return;
+    }
+    this.signInState.set('sending');
+    this.signInError.set('');
+    try {
+      await this.auth.requestMagicLink(email);
+      this.signInState.set('sent');
+    } catch (error) {
+      this.signInError.set(toMessage(error));
+      this.signInState.set('failed');
+    }
+  }
+
+  protected async signOut(): Promise<void> {
+    await this.auth.signOut();
+    this.player.set(null);
+    this.phase.set('intro');
   }
 
   protected start(): void {
@@ -132,7 +176,7 @@ export class QuizPage implements OnInit {
     this.submitState.set('submitting');
     this.submitError.set('');
     try {
-      await this.api.submitScore(this.selectedPlayerId(), quiz.id, this.score());
+      await this.api.submitScore(quiz.id, this.score());
       this.submitState.set('submitted');
     } catch (error) {
       if (error instanceof QuizApiError && error.code === 'already_submitted') {
@@ -159,7 +203,15 @@ export class QuizPage implements OnInit {
   }
 
   protected playerName(): string {
-    return this.players().find((player) => player.id === this.selectedPlayerId())?.name ?? '';
+    return this.player()?.name ?? '';
+  }
+
+  private async refreshPlayer(): Promise<void> {
+    if (this.auth.email() === null) {
+      this.player.set(null);
+      return;
+    }
+    this.player.set(await this.api.getCurrentPlayer());
   }
 
   private async refreshBoard(quizId: string): Promise<void> {

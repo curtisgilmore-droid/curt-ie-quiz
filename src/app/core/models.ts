@@ -28,6 +28,13 @@ export interface Quiz {
 export interface Player {
   id: string;
   name: string;
+  email?: string;
+}
+
+export interface CurrentPlayer {
+  id: string;
+  name: string;
+  email: string;
 }
 
 export interface WeeklyScore {

@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@ang
 
 import { AuthService } from '../../core/auth.service';
 import { JoeExtractService } from '../../core/joe-extract.service';
-import { QuizDraft } from '../../core/models';
+import { Player, QuizDraft } from '../../core/models';
 import { QuizApiService } from '../../core/quiz-api.service';
 import { QuizValidationError, validateQuizDraft } from '../../core/quiz-parser';
 
@@ -25,6 +25,11 @@ export class AdminPage implements OnInit {
   protected readonly busy = signal(false);
   protected readonly quizUrl = signal('');
   protected readonly draft = signal<QuizDraft | null>(null);
+  protected readonly players = signal<Player[]>([]);
+  protected readonly newName = signal('');
+  protected readonly newEmail = signal('');
+  protected readonly magicEmail = signal('');
+  protected readonly magicSent = signal(false);
 
   async ngOnInit(): Promise<void> {
     try {
@@ -49,15 +54,42 @@ export class AdminPage implements OnInit {
     }
   }
 
+  protected async requestMagicLink(): Promise<void> {
+    this.busy.set(true);
+    this.clearMessage();
+    this.magicSent.set(false);
+    try {
+      await this.auth.requestMagicLink(this.magicEmail());
+      this.magicSent.set(true);
+    } catch (error) {
+      this.showError(toMessage(error));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
   protected async signOut(): Promise<void> {
     await this.auth.signOut();
     this.clearMessage();
+    this.players.set([]);
     this.state.set('signed_out');
   }
 
   protected updateUrl(event: Event): void {
     this.quizUrl.set((event.target as HTMLInputElement).value);
     this.draft.set(null);
+  }
+
+  protected updateMagicEmail(event: Event): void {
+    this.magicEmail.set((event.target as HTMLInputElement).value);
+  }
+
+  protected updateNewName(event: Event): void {
+    this.newName.set((event.target as HTMLInputElement).value);
+  }
+
+  protected updateNewEmail(event: Event): void {
+    this.newEmail.set((event.target as HTMLInputElement).value);
   }
 
   protected async loadQuiz(): Promise<void> {
@@ -94,13 +126,88 @@ export class AdminPage implements OnInit {
     }
   }
 
+  protected async addPlayer(): Promise<void> {
+    this.busy.set(true);
+    this.clearMessage();
+    try {
+      await this.api.addPlayer(this.newName(), this.newEmail());
+      this.newName.set('');
+      this.newEmail.set('');
+      await this.loadPlayers();
+      this.showSuccess('Player added.');
+    } catch (error) {
+      this.showError(toMessage(error));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  protected async removePlayer(playerId: string): Promise<void> {
+    this.busy.set(true);
+    this.clearMessage();
+    try {
+      await this.api.removePlayer(playerId);
+      await this.loadPlayers();
+      this.showSuccess('Player removed.');
+    } catch (error) {
+      this.showError(toMessage(error));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  protected async fetchLatest(): Promise<void> {
+    this.busy.set(true);
+    this.clearMessage();
+    try {
+      const result = await this.api.fetchLatestQuiz();
+      if (result.published) {
+        this.showSuccess(`Published "${result.title ?? 'this week'}" as the current quiz.`);
+      } else if (result.skipped) {
+        this.showSuccess(result.reason ?? 'The current quiz is already this week.');
+      } else {
+        this.showError(result.reason ?? 'The quiz was not published.');
+      }
+    } catch (error) {
+      this.showError(toMessage(error));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  protected async sendInvite(): Promise<void> {
+    this.busy.set(true);
+    this.clearMessage();
+    try {
+      const result = await this.api.sendWeeklyInvite();
+      if (result.skipped) {
+        this.showError(result.reason ?? 'Invite was skipped.');
+      } else {
+        this.showSuccess(`Sent ${result.sent} invite${result.sent === 1 ? '' : 's'}.`);
+      }
+    } catch (error) {
+      this.showError(toMessage(error));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
   private async refreshState(): Promise<void> {
     if (this.auth.email() === null) {
       this.state.set('signed_out');
       return;
     }
     const isAdmin = await this.api.isAdmin();
-    this.state.set(isAdmin ? 'admin' : 'not_admin');
+    if (!isAdmin) {
+      this.state.set('not_admin');
+      return;
+    }
+    this.state.set('admin');
+    await this.loadPlayers();
+  }
+
+  private async loadPlayers(): Promise<void> {
+    this.players.set(await this.api.getPlayers());
   }
 
   private showError(text: string): void {

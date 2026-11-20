@@ -18,8 +18,29 @@
           <span>Password</span>
           <input #passwordInput type="password" autocomplete="current-password" required />
         </label>
-        <button type="submit" [disabled]="busy()">Sign in</button>
+        <button type="submit" [disabled]="busy()">Sign in with password</button>
       </form>
+
+      <hr class="divider" />
+
+      <form (submit)="$event.preventDefault(); requestMagicLink()">
+        <label class="field">
+          <span>Or email a magic link</span>
+          <input
+            type="email"
+            [value]="magicEmail()"
+            (input)="updateMagicEmail($event)"
+            autocomplete="email"
+            required
+          />
+        </label>
+        <button type="submit" class="secondary" [disabled]="busy() || magicEmail().trim() === ''">
+          Email me a sign-in link
+        </button>
+      </form>
+      @if (magicSent()) {
+        <div class="notice">Check your inbox for the sign-in link.</div>
+      }
     </div>
   }
   @case ('not_admin') {
@@ -36,8 +57,9 @@
     <div class="card">
       <h1>Publish this week's quiz</h1>
       <p class="muted">
-        Signed in as {{ email() }}. Paste this week's JOE.ie quiz link, load it, then publish.
-        Publishing makes it the current quiz. Past scores are kept.
+        Signed in as {{ email() }}. Friday at 11:00 the app finds the new JOE Friday Pub Quiz,
+        publishes it, and emails everyone. Use the buttons below only to check early or to
+        override that.
       </p>
 
       <form (submit)="$event.preventDefault(); loadQuiz()">
@@ -74,11 +96,74 @@
       }
 
       <div class="actions">
+        <button type="button" class="secondary" [disabled]="busy()" (click)="fetchLatest()">
+          Fetch this week's quiz now
+        </button>
         <button type="button" [disabled]="busy() || draft() === null" (click)="publish()">
           Publish as current quiz
         </button>
+        <button type="button" class="secondary" [disabled]="busy()" (click)="sendInvite()">
+          Send this week's invite now
+        </button>
         <button type="button" class="secondary" (click)="signOut()">Sign out</button>
       </div>
+    </div>
+
+    <div class="card">
+      <h2>Players</h2>
+      <p class="muted">
+        Each player needs a unique email. Adding someone creates their Auth account so they can
+        receive a magic link. The Friday 11:00 invite emails everyone on this list.
+      </p>
+
+      @if (players().length === 0) {
+        <p class="muted">No players yet.</p>
+      } @else {
+        <table class="board">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (player of players(); track player.id) {
+              <tr>
+                <td>{{ player.name }}</td>
+                <td>{{ player.email }}</td>
+                <td class="num">
+                  <button
+                    type="button"
+                    class="secondary"
+                    [disabled]="busy()"
+                    (click)="removePlayer(player.id)"
+                  >
+                    Remove
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+
+      <form class="player-form" (submit)="$event.preventDefault(); addPlayer()">
+        <label class="field">
+          <span>Name</span>
+          <input type="text" [value]="newName()" (input)="updateNewName($event)" required />
+        </label>
+        <label class="field">
+          <span>Email</span>
+          <input type="email" [value]="newEmail()" (input)="updateNewEmail($event)" required />
+        </label>
+        <button
+          type="submit"
+          [disabled]="busy() || newName().trim() === '' || newEmail().trim() === ''"
+        >
+          Add player
+        </button>
+      </form>
     </div>
   }
 }

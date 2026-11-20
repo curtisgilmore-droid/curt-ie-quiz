@@ -27,10 +27,21 @@ function setup(email: string | null, isAdmin: boolean) {
     init: vi.fn().mockResolvedValue(undefined),
     signIn: vi.fn(),
     signOut: vi.fn(),
+    requestMagicLink: vi.fn().mockResolvedValue(undefined),
   };
   const api = {
     isAdmin: vi.fn().mockResolvedValue(isAdmin),
     publishQuiz: vi.fn().mockResolvedValue(undefined),
+    getPlayers: vi.fn().mockResolvedValue([{ id: 'p1', name: 'Ann', email: 'ann@example.com' }]),
+    addPlayer: vi.fn().mockResolvedValue(undefined),
+    removePlayer: vi.fn().mockResolvedValue(undefined),
+    sendWeeklyInvite: vi.fn().mockResolvedValue({ sent: 1, skipped: false }),
+    fetchLatestQuiz: vi.fn().mockResolvedValue({
+      sent: 0,
+      skipped: false,
+      published: true,
+      title: 'Week 530',
+    }),
   };
   const extractor = { extract: vi.fn() };
   TestBed.configureTestingModule({
@@ -62,6 +73,7 @@ describe('AdminPage', () => {
     const { fixture, element } = setup(null, false);
     await settle(fixture);
     expect(element.querySelector('input[type="password"]')).not.toBeNull();
+    expect(element.textContent).toContain('magic link');
   });
 
   it('refuses users who are not in the admins table', async () => {
@@ -70,11 +82,17 @@ describe('AdminPage', () => {
     expect(element.textContent).toContain('Not an admin');
   });
 
+  it('lists players for an admin', async () => {
+    const { fixture, element } = setup('admin@example.com', true);
+    await settle(fixture);
+    expect(element.textContent).toContain('ann@example.com');
+    expect(buttonNamed(element, 'Send this week').disabled).toBe(false);
+  });
+
   it('keeps publish disabled until a quiz link has loaded', async () => {
     const { fixture, element } = setup('admin@example.com', true);
     await settle(fixture);
     expect(buttonNamed(element, 'Publish').disabled).toBe(true);
-    expect(buttonNamed(element, 'Load quiz').disabled).toBe(true);
   });
 
   it('shows the load error and does not enable publish', async () => {
@@ -105,10 +123,30 @@ describe('AdminPage', () => {
     expect(details.open).toBe(false);
     details.open = true;
     expect(element.querySelector('pre.preview')?.textContent).toContain('[x] c');
+
     buttonNamed(element, 'Publish').click();
     await settle(fixture);
 
     expect(api.publishQuiz).toHaveBeenCalledWith(expect.objectContaining({ weekId: '530' }));
     expect(element.textContent).toContain('Published "Week 530"');
+  });
+
+  it('fetches this week without treating it as a manual publish', async () => {
+    const { fixture, api, element } = setup('admin@example.com', true);
+    await settle(fixture);
+    buttonNamed(element, 'Fetch this week').click();
+    await settle(fixture);
+    expect(api.fetchLatestQuiz).toHaveBeenCalled();
+    expect(api.publishQuiz).not.toHaveBeenCalled();
+    expect(element.textContent).toContain('Published "Week 530"');
+  });
+
+  it('sends the weekly invite from the admin button', async () => {
+    const { fixture, api, element } = setup('admin@example.com', true);
+    await settle(fixture);
+    buttonNamed(element, 'Send this week').click();
+    await settle(fixture);
+    expect(api.sendWeeklyInvite).toHaveBeenCalled();
+    expect(element.textContent).toContain('Sent 1 invite');
   });
 });

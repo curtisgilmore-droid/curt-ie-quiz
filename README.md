@@ -1,89 +1,101 @@
 # CURT.ie Quiz
 
-A small Angular app for running the weekly JOE.ie Friday Pub Quiz with a group. Players pick their name, answer the questions with instant feedback, and the score is saved to Supabase. Weekly and all-time leaderboards are built in.
+A small Angular app for running the weekly JOE.ie Friday Pub Quiz with a group. Players sign in with a magic link (no passwords), answer the questions with instant feedback, and the score is saved as that email address. Weekly and all-time leaderboards are built in. Every Friday at 11:00 Irish time, every player gets an email invite.
 
 It is an unofficial companion to [JOE.ie](https://www.joe.ie/quiz). Questions belong to JOE.ie, and every quiz links back to the original.
 
 ## How it works
 
 - **Frontend:** Angular (standalone components, signals), hosted on GitHub Pages.
-- **Storage:** Supabase Postgres. The browser only holds the project URL and the public anon key. Row-level security stops anyone writing scores directly, so the only way in is the `submit_score` function, which checks the player, the current quiz, and that the score is in range. One score per player per week, first submission wins.
-- **Admin:** `/admin` signs in a single Supabase Auth user (listed in the `admins` table) and publishes the weekly quiz from pasted JSON.
+- **Storage:** Supabase Postgres. The browser only holds the project URL and the public anon key. Scores are written only through `submit_score`, which reads the signed-in email from the session. Nobody can submit as someone else.
+- **Sign-in:** magic link email via Supabase Auth. Only addresses already on the `players` list receive a link (`shouldCreateUser: false`).
+- **Admin:** `/admin` for publishing the quiz, managing players, and sending the invite now. Password sign-in and magic link both work for the admin account.
+- **Weekly job:** Edge Function + `pg_cron` at Friday 11:00 `Europe/Dublin`. It finds the newest JOE Friday Pub Quiz, publishes it, then emails every player a normal link to the site (not a magic link). If that week is already current, it does nothing. If the fetch fails, only the admin is emailed and the previous quiz stays up.
 - **Keep-alive:** a daily GitHub Actions job queries Supabase so the free project never pauses for inactivity.
 
 ## One-time setup
 
-1. **GitHub repo.** Create an empty public repo named `curt-ie-quiz`, then from this folder:
+### 1. GitHub Pages
 
-   ```bash
-   git init -b main
-   git add .
-   git commit -m "CURT.ie Quiz"
-   git remote add origin git@github.com:<your-user>/curt-ie-quiz.git
-   git push -u origin main
-   ```
+Create a public repo named `curt-ie-quiz`, push this project, set Pages source to **GitHub Actions**, and add repository variables `SUPABASE_URL` and `SUPABASE_ANON_KEY` (never the service role key). Full click path is in the earlier deploy notes: Settings → Pages → Source → GitHub Actions.
 
-2. **Supabase project.** Create a free project, open the SQL editor, and run
-   [`supabase/migrations/20261113000000_init.sql`](supabase/migrations/20261113000000_init.sql).
-3. **Players.** Add each person's name in the Table editor under `players`.
-4. **Admin user.** In Authentication, add a user with an email and password and turn off new sign-ups. Then run, with your email:
+### 2. Supabase schema
 
-   ```sql
-   insert into public.admins (user_id)
-   select id from auth.users where email = 'you@example.com';
-   ```
+1. Create a free Supabase project.
+2. Run [`supabase/migrations/20261113000000_init.sql`](supabase/migrations/20261113000000_init.sql) in the SQL editor.
+3. If you already inserted players without emails, add an `email` value for each row in the Table editor.
+4. Run [`supabase/migrations/20261118000000_magic_link_players.sql`](supabase/migrations/20261118000000_magic_link_players.sql).
 
-5. **Turn on GitHub Pages (Actions source).**
-   1. Open your repo on github.com and click **Settings** in the top bar, under the repo name (not your account settings).
-   2. In the left sidebar, under **Code and automation**, click **Pages**.
-   3. Under **Build and deployment**, open the **Source** dropdown and choose **GitHub Actions**. The page saves automatically, and there is no Save button.
-   4. Do not pick a branch. The "Deploy from a branch" option is not used here.
+### 3. Admin user
 
-   The free plan only publishes Pages from a **public** repo. If the Pages page says it needs a public repo, check **Settings**, then **General**, then **Danger Zone**, then **Change visibility**.
+1. Authentication → Users → Add user (email + password, auto-confirm).
+2. Authentication → Providers → Email: turn off **Allow new users to sign up**.
+3. Run:
 
-6. **Add the Supabase settings as Actions variables.**
-   1. In the repo, go to **Settings**, then **Secrets and variables**, then **Actions**.
-   2. Click the **Variables** tab (not **Secrets**), then **New repository variable**.
-   3. Add `SUPABASE_URL` with your project URL (Settings, then API, "Project URL").
-   4. Add `SUPABASE_ANON_KEY` with the anon or publishable key from the same API page.
-   5. Never add the `service_role` key anywhere.
+```sql
+insert into public.admins (user_id)
+select id from auth.users where email = 'you@example.com';
+```
 
-7. **Run the deploy.** Pushing to `main` starts the **Deploy to GitHub Pages** workflow automatically. To check it, open the **Actions** tab and wait for a green tick. If the run was started before steps 5 and 6, click it, then **Re-run all jobs**.
+### 4. Brevo (email delivery)
 
-   When it finishes, the site is at `https://<your-user>.github.io/curt-ie-quiz/`. The link also appears on the Pages settings page and on the workflow run page.
+Supabase's built-in mailer only sends to team members and caps at about 2 emails an hour. Production needs custom SMTP.
+
+1. Create a free [Brevo](https://www.brevo.com/) account.
+2. Add and verify a sender. A domain you control (DKIM + DMARC DNS records) delivers reliably. A free Gmail or Outlook From address is rewritten by Brevo and often lands in spam.
+3. Create an SMTP key and an API key in Brevo.
+
+### 5. Supabase Auth SMTP and URLs
+
+1. Authentication → SMTP: host `smtp-relay.brevo.com`, port `587`, Brevo SMTP login and key, sender name `CURT.ie Quiz`.
+2. Authentication → Rate Limits: raise the email limit above 30/hour if the group is larger.
+3. Authentication → URL configuration:
+   - Site URL: `https://<your-user>.github.io/curt-ie-quiz/`
+   - Redirect URLs: add the same URL (and `http://localhost:4200/` for local work).
+
+### 6. Edge Functions
+
+Install the [Supabase CLI](https://supabase.com/docs/guides/cli), log in, and link the project. Then:
+
+```bash
+supabase secrets set \
+  BREVO_API_KEY=... \
+  BREVO_SENDER_EMAIL=quiz@yourdomain.ie \
+  BREVO_SENDER_NAME="CURT.ie Quiz" \
+  SITE_URL=https://<your-user>.github.io/curt-ie-quiz/
+
+supabase functions deploy manage-players
+supabase functions deploy send-weekly-invite
+```
+
+`SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are provided to functions automatically.
+
+### 7. Friday cron (Vault + SQL)
+
+In the SQL editor:
+
+```sql
+select vault.create_secret('https://<project-ref>.supabase.co', 'project_url');
+select vault.create_secret('<service-role-key>', 'service_role_key');
+```
+
+Then run [`supabase/migrations/20261118000001_weekly_invite_cron.sql`](supabase/migrations/20261118000001_weekly_invite_cron.sql).
+
+### 8. Players
+
+Use `/admin` → Players to add each person (name + email). That creates their Auth user so magic links work. Prefer this over the Table editor once the functions are deployed.
 
 ## Weekly workflow
 
-1. Open `/admin` and sign in.
-2. Paste the JOE.ie quiz link, for example `https://www.joe.ie/quiz/the-joe-friday-pub-quiz-week-529-889400`, and click **Load quiz**. The app reads the questions, options, correct answers, rounds and images, and shows the title and question count. Open **View questions** if you want to check them.
-3. Click **Publish as current quiz**, then send the Pages link to the Teams chat.
+On a normal week you do nothing. Friday at 11:00 Irish time the job publishes the new quiz and sends the invite.
 
-The same extraction is available from the command line if you want a JSON file. `sample/` is git-ignored so it stays out of the public repo:
+Use `/admin` only when you want to step in:
 
-```bash
-npm run extract -- "https://www.joe.ie/quiz/<this-week-url>" sample/week.json
-```
+- **Fetch this week's quiz now** publishes the latest Friday Pub Quiz without emailing anyone.
+- **Load quiz** and **Publish as current quiz** override that with a specific JOE.ie link.
+- **Send this week's invite now** resends the invite for the quiz that is already current. It does not fetch a new one.
 
-Quiz JSON shape (`round` and `imageUrl` are optional):
-
-```json
-{
-  "weekId": "529",
-  "title": "The JOE Friday Pub Quiz: week 529",
-  "sourceUrl": "https://www.joe.ie/quiz/the-joe-friday-pub-quiz-week-529-889400",
-  "questions": [
-    {
-      "round": "ROUND 1: General Knowledge",
-      "text": "How many different colours are recognised as making up a rainbow?",
-      "options": ["Nine", "Seven", "Eight"],
-      "correctIndex": 1,
-      "imageUrl": "https://assets.joe.ie/uploads/2026/11/1.webp"
-    }
-  ]
-}
-```
-
-Publishing a quiz with an existing `weekId` updates it and makes it current again. Past scores are kept.
+Players open the site, enter their email, click the magic link, and play. Only the first score that week counts.
 
 ## Local development
 
@@ -94,8 +106,14 @@ npm start
 npm test
 ```
 
-`npm run configure` rewrites `src/environments/environment.ts`. Do not commit real values there. The committed file holds empty placeholders, and the deploy workflow generates the real one at build time.
+`npm run configure` rewrites `src/environments/environment.ts`. Do not commit real values. The deploy workflow generates them at build time.
+
+Optional JSON extract (also available from the admin "Load quiz" button):
+
+```bash
+npm run extract -- "https://www.joe.ie/quiz/<this-week-url>" sample/week.json
+```
 
 ## Supabase free plan notes
 
-Free projects are paused after about 7 days with too little database activity, and a paused project can be resumed from the dashboard for up to a year. The keep-alive workflow prevents this.
+Free projects pause after about 7 days with too little database activity. A paused project can be resumed for up to a year. The keep-alive workflow prevents pausing.

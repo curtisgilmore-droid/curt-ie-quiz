@@ -1,0 +1,2 @@
+[functions.manage-players]
+verify_jwt = true

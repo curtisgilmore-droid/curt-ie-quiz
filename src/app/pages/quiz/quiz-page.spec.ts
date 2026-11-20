@@ -1,7 +1,9 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 
+import { AuthService } from '../../core/auth.service';
 import { Quiz, WeeklyScore } from '../../core/models';
 import { QuizApiError, QuizApiService } from '../../core/quiz-api.service';
 import { QuizPage } from './quiz-page';
@@ -19,6 +21,8 @@ const QUIZ: Quiz = {
   ],
 };
 
+const PLAYER = { id: 'p1', name: 'Ann', email: 'ann@example.com' };
+
 function existingScore(playerId: string): WeeklyScore {
   return {
     quizId: 'quiz-1',
@@ -32,24 +36,40 @@ function existingScore(playerId: string): WeeklyScore {
 }
 
 function setup(
-  weeklyScores: WeeklyScore[] = [],
-  submitScore = vi.fn().mockResolvedValue(undefined),
+  options: {
+    email?: string | null;
+    player?: typeof PLAYER | null;
+    weeklyScores?: WeeklyScore[];
+    submitScore?: ReturnType<typeof vi.fn>;
+    requestMagicLink?: ReturnType<typeof vi.fn>;
+  } = {},
 ) {
+  const email = signal(options.email === undefined ? PLAYER.email : options.email);
+  const auth = {
+    email,
+    ready: signal(true),
+    init: vi.fn().mockResolvedValue(undefined),
+    requestMagicLink: options.requestMagicLink ?? vi.fn().mockResolvedValue(undefined),
+    signOut: vi.fn().mockResolvedValue(undefined),
+  };
   const api = {
     getCurrentQuiz: vi.fn().mockResolvedValue(QUIZ),
-    getPlayers: vi.fn().mockResolvedValue([
-      { id: 'p1', name: 'Ann' },
-      { id: 'p2', name: 'Bob' },
-    ]),
-    getWeeklyScores: vi.fn().mockResolvedValue(weeklyScores),
-    submitScore,
+    getCurrentPlayer: vi
+      .fn()
+      .mockResolvedValue(options.player === undefined ? PLAYER : options.player),
+    getWeeklyScores: vi.fn().mockResolvedValue(options.weeklyScores ?? []),
+    submitScore: options.submitScore ?? vi.fn().mockResolvedValue(undefined),
   };
   TestBed.configureTestingModule({
     imports: [QuizPage],
-    providers: [provideRouter([]), { provide: QuizApiService, useValue: api }],
+    providers: [
+      provideRouter([]),
+      { provide: QuizApiService, useValue: api },
+      { provide: AuthService, useValue: auth },
+    ],
   });
   const fixture = TestBed.createComponent(QuizPage);
-  return { fixture, api, element: fixture.nativeElement as HTMLElement };
+  return { fixture, api, auth, element: fixture.nativeElement as HTMLElement };
 }
 
 async function settle(fixture: ReturnType<typeof setup>['fixture']): Promise<void> {
@@ -57,12 +77,6 @@ async function settle(fixture: ReturnType<typeof setup>['fixture']): Promise<voi
   await new Promise((resolve) => setTimeout(resolve));
   await fixture.whenStable();
   fixture.detectChanges();
-}
-
-function selectPlayer(element: HTMLElement, id: string): void {
-  const select = element.querySelector('select') as HTMLSelectElement;
-  select.value = id;
-  select.dispatchEvent(new Event('change'));
 }
 
 function clickButton(element: HTMLElement, text: string): void {
@@ -76,18 +90,42 @@ function clickButton(element: HTMLElement, text: string): void {
 }
 
 describe('QuizPage', () => {
-  it('keeps the start button disabled until a player is chosen', async () => {
-    const { fixture, element } = setup();
+  it('asks for an email when signed out', async () => {
+    const { fixture, element } = setup({ email: null, player: null });
+    await settle(fixture);
+    expect(element.querySelector('input[type="email"]')).not.toBeNull();
+    expect(element.textContent).toContain('Email me a sign-in link');
+  });
+
+  it('sends a magic link for the typed email', async () => {
+    const requestMagicLink = vi.fn().mockResolvedValue(undefined);
+    const { fixture, auth, element } = setup({
+      email: null,
+      player: null,
+      requestMagicLink,
+    });
     await settle(fixture);
 
+    const input = element.querySelector('input[type="email"]') as HTMLInputElement;
+    input.value = 'ann@example.com';
+    input.dispatchEvent(new Event('input'));
+    await settle(fixture);
+    clickButton(element, 'Email me a sign-in link');
+    await settle(fixture);
+
+    expect(auth.requestMagicLink).toHaveBeenCalledWith('ann@example.com');
+    expect(element.textContent).toContain('Check your inbox');
+  });
+
+  it('blocks a signed-in player who has already submitted this week', async () => {
+    const { fixture, element } = setup({ weeklyScores: [existingScore('p1')] });
+    await settle(fixture);
+
+    expect(element.textContent).toContain('already submitted');
     const start = Array.from(element.querySelectorAll('button')).find(
       (button) => button.textContent?.trim() === 'Start quiz',
     ) as HTMLButtonElement;
     expect(start.disabled).toBe(true);
-
-    selectPlayer(element, 'p1');
-    await settle(fixture);
-    expect(start.disabled).toBe(false);
   });
 
   it('shows the round name and question image', async () => {
@@ -106,8 +144,6 @@ describe('QuizPage', () => {
     });
     await settle(fixture);
 
-    selectPlayer(element, 'p1');
-    await settle(fixture);
     clickButton(element, 'Start quiz');
     await settle(fixture);
 
@@ -117,26 +153,10 @@ describe('QuizPage', () => {
     );
   });
 
-  it('blocks a player who has already submitted this week', async () => {
-    const { fixture, element } = setup([existingScore('p1')]);
-    await settle(fixture);
-
-    selectPlayer(element, 'p1');
-    await settle(fixture);
-
-    expect(element.textContent).toContain('already submitted');
-    const start = Array.from(element.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === 'Start quiz',
-    ) as HTMLButtonElement;
-    expect(start.disabled).toBe(true);
-  });
-
-  it('scores the quiz, shows feedback and submits the final score', async () => {
+  it('scores the quiz and submits without a client-chosen player id', async () => {
     const { fixture, api, element } = setup();
     await settle(fixture);
 
-    selectPlayer(element, 'p1');
-    await settle(fixture);
     clickButton(element, 'Start quiz');
     await settle(fixture);
 
@@ -152,7 +172,7 @@ describe('QuizPage', () => {
     clickButton(element, 'Finish');
     await settle(fixture);
 
-    expect(api.submitScore).toHaveBeenCalledWith('p1', 'quiz-1', 1);
+    expect(api.submitScore).toHaveBeenCalledWith('quiz-1', 1);
     expect(element.textContent).toContain('1 / 2');
     expect(element.textContent).toContain('Your score has been saved.');
   });
@@ -161,11 +181,9 @@ describe('QuizPage', () => {
     const submitScore = vi
       .fn()
       .mockRejectedValue(new QuizApiError('already_submitted', 'already_submitted'));
-    const { fixture, element } = setup([], submitScore);
+    const { fixture, element } = setup({ submitScore });
     await settle(fixture);
 
-    selectPlayer(element, 'p2');
-    await settle(fixture);
     clickButton(element, 'Start quiz');
     await settle(fixture);
     clickButton(element, 'a');

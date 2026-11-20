@@ -172,6 +172,16 @@ button.secondary,
   border: 1px solid var(--green);
 }
 
+button.linkish {
+  padding: 0;
+  font-weight: 600;
+  color: var(--green);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -287,6 +297,16 @@ table.board .num {
 table.board tr.highlight td {
   background: var(--green-light);
   font-weight: 600;
+}
+
+hr.divider {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 1.5rem 0;
+}
+
+.player-form {
+  margin-top: 1.25rem;
 }
 
 details.quiz-details {
